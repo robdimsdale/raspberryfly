@@ -1,0 +1,7 @@
+---
+jobs:
+- name: some-job
+  plan:
+  - task: some-task
+    config: {platform: linux, run: {path: sh, args: [-c, echo "hello world"]}}
+    

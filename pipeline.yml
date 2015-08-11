@@ -3,5 +3,9 @@ jobs:
 - name: some-job
   plan:
   - task: some-task
-    config: {platform: linux, run: {path: sh, args: [-c, echo "hello world"]}}
+    config: {platform: linux, run: {path: sh, args: [-c, sleep 20, echo "hello world"]}}
+- name: another-job
+  plan:
+  - task: some-task
+    config: {platform: linux, run: {path: sh, args: [-c, sleep 20, echo "hello world again"]}}
     

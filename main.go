@@ -3,26 +3,64 @@ package main
 import (
 	"flag"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/gorilla/mux"
+	"github.com/gorilla/schema"
 	"github.com/stianeikeland/go-rpio"
 )
 
-var currentState bool
+var (
+	currentState bool
+
+	p props
+
+	decoder *schema.Decoder
+)
+
+type props struct {
+	Username string `schema:"username"`
+	Password string `schema:"password"`
+	URL      string `schema:"url"`
+	Pipeline string `schema:"pipeline"`
+	Job      string `schema:"job"`
+}
 
 func main() {
-
 	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	username := flags.String("username", "", "Username for concourse")
-	password := flags.String("password", "", "Password for concourse")
-	url := flags.String("url", "", "base url for concourse")
-	pipeline := flags.String("pipeline", "", "pipeline for concourse")
-	job := flags.String("job", "", "job for concourse")
+	usernameFlag := flags.String("username", "", "Username for concourse")
+	passwordFlag := flags.String("password", "", "Password for concourse")
+	urlFlag := flags.String("url", "", "base url for concourse")
+	pipelineFlag := flags.String("pipeline", "", "pipeline for concourse")
+	jobFlag := flags.String("job", "", "job for concourse")
 	flags.Parse(os.Args[1:])
 
+	p = props{
+		Username: *usernameFlag,
+		Password: *passwordFlag,
+		URL:      *urlFlag,
+		Pipeline: *pipelineFlag,
+		Job:      *jobFlag,
+	}
+
 	fmt.Println("raspberryfly airbourne")
+
+	decoder = schema.NewDecoder()
+
+	r := mux.NewRouter()
+
+	r.HandleFunc("/", getHomeHandler).Methods("GET")
+
+	r.HandleFunc("/", postHomeHandler).Methods("POST")
+
+	http.Handle("/", r)
+
+	fmt.Println("Listening...")
+	// http.ListenAndServe(":3000", nil)
+	go http.ListenAndServe(":3000", nil)
 
 	if err := rpio.Open(); err != nil {
 		fmt.Println(err)
@@ -53,7 +91,7 @@ func main() {
 
 		state := res14 == 1 && res15 == 1 && res18 == 1
 		if shouldTrigger(state) {
-			trigger(url, username, password, pipeline, job)
+			trigger(p)
 		}
 
 		time.Sleep(50 * time.Millisecond)
@@ -70,14 +108,14 @@ func shouldTrigger(newState bool) bool {
 	return newState
 }
 
-func trigger(url, username, password, pipeline, job *string) {
-	endpoint := *url + "/pipelines/" + *pipeline + "/jobs/" + *job + "/builds"
+func trigger(p props) {
+	endpoint := p.URL + "/pipelines/" + p.Pipeline + "/jobs/" + p.Job + "/builds"
 	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
 		fmt.Printf("%v", err)
 	}
 
-	req.SetBasicAuth(*username, *password)
+	req.SetBasicAuth(p.Username, p.Password)
 	client := &http.Client{}
 	resp, err := client.Do(req)
 
@@ -86,4 +124,27 @@ func trigger(url, username, password, pipeline, job *string) {
 	}
 
 	fmt.Printf("resp: %v\n", resp)
+}
+
+func getHomeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Here")
+	t, _ := template.ParseFiles("web/index.html")
+	t.Execute(w, p)
+}
+
+func postHomeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("POSTED")
+	//parse input
+	err := r.ParseForm()
+	if err != nil {
+		panic(err)
+	}
+	err = decoder.Decode(&p, r.PostForm)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("props %#v\n", p)
+
+	http.Redirect(w, r, "/", 302)
 }
